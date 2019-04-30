@@ -1671,6 +1671,82 @@ compiler_unwind_fblock(struct compiler *c, struct fblockinfo *info,
     Py_UNREACHABLE();
 }
 
+static PyObject *
+cleanup_docstring(PyObject *docstring)
+{
+    PyObject *expanded = PyObject_CallMethod(docstring, "expandtabs", NULL);
+    PyObject *lines = PyObject_CallMethod(expanded, "split", "s", "\n");
+    Py_DECREF(expanded);
+    Py_ssize_t lines_num = PySequence_Length(lines);
+    long margin = PY_SSIZE_T_MAX;
+
+    // Find minimum indentation of any non-blank lines after first line.
+    if (lines_num > 1) {
+        for (Py_ssize_t i=1; i<lines_num; i++) {
+            PyObject *line = PySequence_GetItem(lines, i);
+            PyObject *lstrip_line = PyObject_CallMethod(line, "lstrip", NULL);
+            Py_ssize_t content_len = PyUnicode_GET_LENGTH(lstrip_line);
+
+            if (content_len) {
+                Py_ssize_t line_len = PyUnicode_GET_LENGTH(line);
+                Py_ssize_t indent_len = line_len - content_len;
+                if (margin > indent_len) {
+                    margin = indent_len;
+                }
+            }
+
+            Py_DECREF(line);
+            Py_DECREF(lstrip_line);
+        }
+    }
+
+    // Remove indentation.
+    if (lines_num >= 1) {
+        PyObject *first_line = PySequence_GetItem(lines, 0);
+        PyObject *first_lstrip_line = PyObject_CallMethod(first_line, "lstrip", NULL);
+        PySequence_SetItem(lines, 0, first_lstrip_line);
+    }
+    if (margin < PY_SSIZE_T_MAX) {
+        for (Py_ssize_t i=1; i<lines_num; i++) {
+            PyObject *line = PySequence_GetItem(lines, i);
+            Py_ssize_t line_len = PyUnicode_GET_LENGTH(line);
+
+            PyObject *strip_margin_line = PyUnicode_Substring(line, margin, line_len);
+            PySequence_SetItem(lines, i, strip_margin_line);
+        }
+    }
+
+    // Remove any trailing or leading blank lines.
+    for (Py_ssize_t i=0; i<lines_num; i++) {
+        PyObject *line = PySequence_GetItem(lines, 0);
+        Py_ssize_t line_len = PyUnicode_GET_LENGTH(line);
+        Py_DECREF(line);
+        if (line_len == 0) {
+            PySequence_SetItem(lines, 0, NULL);
+        } else {
+            break;
+        }
+    }
+    lines_num = PySequence_Length(lines);
+    for (Py_ssize_t i=(lines_num-1); i>0; i--) {
+        PyObject *line = PySequence_GetItem(lines, i);
+        Py_ssize_t line_len = PyUnicode_GET_LENGTH(line);
+        Py_DECREF(line);
+        if (line_len == 0) {
+            PySequence_SetItem(lines, i, NULL);
+        } else {
+            break;
+        }
+    }
+
+    PyObject *rt = PyUnicode_FromFormat("\n");
+    PyObject *ret = PyObject_CallMethod(rt, "join", "O", lines);
+    Py_DECREF(lines);
+    Py_DECREF(rt);
+
+    return ret;
+}
+
 /* Compile a sequence of statements, checking for a docstring
    and for annotations. */
 
@@ -1703,6 +1779,7 @@ compiler_body(struct compiler *c, asdl_seq *stmts)
             i = 1;
             st = (stmt_ty)asdl_seq_GET(stmts, 0);
             assert(st->kind == Expr_kind);
+            st->v.Expr.value->v.Constant.value = cleanup_docstring(st->v.Expr.value->v.Constant.value);
             VISIT(c, expr, st->v.Expr.value);
             if (!compiler_nameop(c, __doc__, Store))
                 return 0;
@@ -2120,6 +2197,9 @@ compiler_function(struct compiler *c, stmt_ty s, int is_async)
     /* if not -OO mode, add docstring */
     if (c->c_optimize < 2) {
         docstring = _PyAST_GetDocString(body);
+        if (docstring) {
+            docstring = cleanup_docstring(docstring);
+        }
     }
     if (compiler_add_const(c, docstring ? docstring : Py_None) < 0) {
         compiler_exit_scope(c);
