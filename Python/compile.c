@@ -1705,6 +1705,8 @@ cleanup_docstring(PyObject *docstring)
         PyObject *first_line = PySequence_GetItem(lines, 0);
         PyObject *first_lstrip_line = PyObject_CallMethod(first_line, "lstrip", NULL);
         PySequence_SetItem(lines, 0, first_lstrip_line);
+
+        Py_DECREF(first_line);
     }
     if (margin < PY_SSIZE_T_MAX) {
         for (Py_ssize_t i=1; i<lines_num; i++) {
@@ -1713,6 +1715,8 @@ cleanup_docstring(PyObject *docstring)
 
             PyObject *strip_margin_line = PyUnicode_Substring(line, margin, line_len);
             PySequence_SetItem(lines, i, strip_margin_line);
+
+            Py_DECREF(line);
         }
     }
 
