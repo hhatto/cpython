@@ -1720,29 +1720,6 @@ cleanup_docstring(PyObject *docstring)
         }
     }
 
-    // Remove any trailing or leading blank lines.
-    for (Py_ssize_t i=0; i<lines_num; i++) {
-        PyObject *line = PySequence_GetItem(lines, 0);
-        Py_ssize_t line_len = PyUnicode_GET_LENGTH(line);
-        Py_DECREF(line);
-        if (line_len == 0) {
-            PySequence_SetItem(lines, 0, NULL);
-        } else {
-            break;
-        }
-    }
-    lines_num = PySequence_Length(lines);
-    for (Py_ssize_t i=(lines_num-1); i>0; i--) {
-        PyObject *line = PySequence_GetItem(lines, i);
-        Py_ssize_t line_len = PyUnicode_GET_LENGTH(line);
-        Py_DECREF(line);
-        if (line_len == 0) {
-            PySequence_SetItem(lines, i, NULL);
-        } else {
-            break;
-        }
-    }
-
     PyObject *rt = PyUnicode_FromFormat("\n");
     PyObject *ret = PyObject_CallMethod(rt, "join", "O", lines);
     Py_DECREF(lines);
